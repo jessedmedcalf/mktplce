@@ -62,12 +62,67 @@ jobs:
 
       - run: npm ci
 
+      - run: mkdir -p out
+
       - id: build-matrix
+        shell: bash
         env:
           AGENT_ID: ${{ inputs.agent_id }}
         run: |
-          MATRIX="$(npm run --silent agent:list -- --matrix ${AGENT_ID:+--agent-id "$AGENT_ID"})"
-          printf 'matrix=%s\n' "$MATRIX" >> "$GITHUB_OUTPUT"
+          ARGS=(--matrix)
+          if [ -n "$AGENT_ID" ]; then
+            ARGS+=(--agent-id "$AGENT_ID")
+          fi
+
+          set +e
+          npm run --silent agent:list -- "${ARGS[@]}" \
+            > out/discover-agents.stdout.log \
+            2> out/discover-agents.stderr.log
+          EXIT_CODE=$?
+          printf 'exit_code=%s\n' "$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            MATRIX="$(cat out/discover-agents.stdout.log)"
+            printf 'matrix=%s\n' "$MATRIX" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo "# discover-agents failed"
+            echo ""
+            echo "- Exit code: $EXIT_CODE"
+            echo "- Trigger: ${{ github.event_name }}"
+            echo ""
+            echo "## stderr"
+            echo ""
+            echo '```text'
+            tail -n 200 out/discover-agents.stderr.log
+            echo '```'
+            echo ""
+            echo "## stdout"
+            echo ""
+            echo '```text'
+            tail -n 100 out/discover-agents.stdout.log
+            echo '```'
+          } > out/discover-agents.failure.md
+
+      - name: Append discovery summary
+        if: always()
+        run: |
+          if [ -f out/discover-agents.failure.md ]; then
+            cat out/discover-agents.failure.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: marketplace-scout-discover-agents
+          path: out/discover-agents.*
+          if-no-files-found: warn
+
+      - name: Fail discovery job if agent listing broke
+        if: ${{ steps.build-matrix.outputs.exit_code != '0' }}
+        run: exit 1
 
   run-agent:
     needs:
@@ -97,15 +152,64 @@ jobs:
           mkdir -p auth
           printf '%s' "$MARKETPLACE_STORAGE_STATE_B64" | base64 --decode > auth/facebook-marketplace.json
 
-      - name: Run agent
-        run: npm run run:agent -- --file "${{ matrix.file }}"
+      - run: mkdir -p out
+
+      - id: run-agent
+        name: Run agent with diagnostics
+        shell: bash
+        run: |
+          set +e
+          npm run --silent run:agent -- --file "${{ matrix.file }}" \
+            > "out/${{ matrix.id }}.stdout.log" \
+            2> "out/${{ matrix.id }}.stderr.log"
+          EXIT_CODE=$?
+          printf 'exit_code=%s\n' "$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            exit 0
+          fi
+
+          {
+            echo "# ${{ matrix.label }} failed"
+            echo ""
+            echo "- Agent: ${{ matrix.id }}"
+            echo "- Exit code: $EXIT_CODE"
+            echo "- Commit: ${{ github.sha }}"
+            echo ""
+            echo "## stderr"
+            echo ""
+            echo '```text'
+            tail -n 200 "out/${{ matrix.id }}.stderr.log"
+            echo '```'
+            echo ""
+            echo "## stdout"
+            echo ""
+            echo '```text'
+            tail -n 100 "out/${{ matrix.id }}.stdout.log"
+            echo '```'
+          } > "out/${{ matrix.id }}.failure.md"
 
       - name: Append workflow summary
-        run: cat "out/${{ matrix.id }}.md" >> "$GITHUB_STEP_SUMMARY"
+        if: always()
+        run: |
+          if [ -f "out/${{ matrix.id }}.md" ]; then
+            cat "out/${{ matrix.id }}.md" >> "$GITHUB_STEP_SUMMARY"
+          elif [ -f "out/${{ matrix.id }}.failure.md" ]; then
+            cat "out/${{ matrix.id }}.failure.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: marketplace-scout-${{ matrix.id }}
           path: |
             out/${{ matrix.id }}.json
             out/${{ matrix.id }}.md
+            out/${{ matrix.id }}.failure.md
+            out/${{ matrix.id }}.stdout.log
+            out/${{ matrix.id }}.stderr.log
+          if-no-files-found: warn
+
+      - name: Fail job if agent execution broke
+        if: ${{ steps.run-agent.outputs.exit_code != '0' }}
+        run: exit 1
