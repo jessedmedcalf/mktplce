@@ -1,0 +1,54 @@
+marketplace:
+  regionSlug: sydney
+  storageStatePath: auth/facebook-marketplace.json
+
+search:
+  origin:
+    label: Sydney CBD
+    latitude: -33.8688
+    longitude: 151.2093
+  baseRadiusKm: 25
+  directionalExtensionsKm:
+    west: 10
+  maxListingAgeDays: 7
+  scrollRounds: 5
+  maxListingsToInspect: 14
+  delayMsBetweenSearches: 1200
+  delayMsBetweenListings: 900
+
+sharedCriteria:
+  blockedTerms:
+    - broken
+    - faulty
+    - repair
+    - for parts
+    - cracked
+    - damaged
+  adjustments:
+    - type: keywordPenalty
+      keywords:
+        - broken
+        - faulty
+        - repair
+        - for parts
+        - cracked
+        - damaged
+      points: -40
+      reason: High risk condition language
+    - type: keywordPenalty
+      keywords:
+        - price firm
+        - firm price
+      points: -8
+      reason: Less room to negotiate
+    - type: keywordBonus
+      keywords:
+        - pickup today
+        - available today
+      points: 4
+      reason: Fast pickup is possible
+
+reporting:
+  exceptionalScoreThreshold: 85
+  goodScoreThreshold: 70
+  outputDir: out

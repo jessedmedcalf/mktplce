@@ -1,0 +1,76 @@
+name: Marketplace Scout
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_id:
+        description: Optional single agent id to run
+        required: false
+        type: string
+  schedule:
+    - cron: "0 */6 * * *"
+
+concurrency:
+  group: marketplace-scout
+  cancel-in-progress: false
+
+jobs:
+  discover-agents:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - id: build-matrix
+        env:
+          AGENT_ID: ${{ inputs.agent_id }}
+        run: |
+          MATRIX="$(npm run agent:list -- --matrix ${AGENT_ID:+--agent-id "$AGENT_ID"})"
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  run-agent:
+    needs: discover-agents
+    runs-on: ubuntu-latest
+    if: ${{ fromJson(needs.discover-agents.outputs.matrix).include[0] != null }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover-agents.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Restore Marketplace auth state
+        env:
+          MARKETPLACE_STORAGE_STATE_B64: ${{ secrets.MARKETPLACE_STORAGE_STATE_B64 }}
+        run: |
+          mkdir -p auth
+          printf '%s' "$MARKETPLACE_STORAGE_STATE_B64" | base64 --decode > auth/facebook-marketplace.json
+
+      - name: Run agent
+        run: npm run run:agent -- --file "${{ matrix.file }}"
+
+      - name: Append workflow summary
+        run: cat "out/${{ matrix.id }}.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-scout-${{ matrix.id }}
+          path: |
+            out/${{ matrix.id }}.json
+            out/${{ matrix.id }}.md

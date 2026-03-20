@@ -1,0 +1,24 @@
+{
+  "name": "marketplace-scout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "agent:list": "tsx src/cli.ts list-agents",
+    "auth:save": "tsx src/cli.ts save-auth",
+    "check": "tsc --noEmit",
+    "run": "tsx src/cli.ts run-all",
+    "run:agent": "tsx src/cli.ts run-agent",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

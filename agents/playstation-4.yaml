@@ -1,0 +1,50 @@
+id: playstation-4
+enabled: true
+label: PlayStation 4
+search:
+  query: PlayStation 4
+  minPrice: 20
+  maxPrice: 140
+
+criteria:
+  excellentPrice: 60
+  goodPrice: 85
+  ceilingPrice: 120
+  blockedTerms:
+    - console box only
+    - digital code
+  adjustments:
+    - type: keywordBonus
+      keywords:
+        - with controller
+        - comes with controller
+        - controller included
+        - includes controller
+        - with controllers
+        - controllers included
+        - dualshock
+      points: 18
+      reason: Controller included
+    - type: keywordBonus
+      keywords:
+        - with 2 controllers
+        - 2 controllers included
+        - two controllers
+        - extra controller
+      points: 12
+      reason: Extra controller adds value
+    - type: keywordPenalty
+      keywords:
+        - no controller
+        - without controller
+      points: -10
+      reason: Replacement controller cost eats into the deal
+    - type: keywordBonus
+      keywords:
+        - games included
+        - with games
+        - bundle
+      points: 6
+      reason: Bundle sweetens the price
+
+notes: Under $60 with controller is exceptional. Under $50 without controllers can still be worth a look.

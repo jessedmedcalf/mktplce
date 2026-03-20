@@ -1,0 +1,33 @@
+id: your-product-id
+enabled: true
+label: Your Product Name
+search:
+  query: Replace me
+  minPrice: 0
+  maxPrice: 999
+
+criteria:
+  excellentPrice: 100
+  goodPrice: 140
+  ceilingPrice: 220
+  requiredTermsAny: []
+  blockedTerms: []
+  adjustments:
+    - type: keywordBonus
+      keywords:
+        - bundle
+        - extras
+      points: 8
+      reason: Extra accessories improve the value
+    - type: keywordPenalty
+      keywords:
+        - broken
+        - faulty
+      points: -35
+      reason: Condition risk
+    - type: priceThresholdBonus
+      atOrBelow: 90
+      points: 10
+      reason: Strong price point
+
+notes: Write the reasoning you want this agent to apply when it spots a deal.
