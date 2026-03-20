@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ needs.schedule-window.outputs.should_run == 'true' }}
     outputs:
-      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      matrix: ${{ steps.discover-pipeline.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,51 +60,92 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
-
-      - run: mkdir -p out
-
-      - id: build-matrix
+      - id: discover-pipeline
+        name: Run discovery pipeline with diagnostics
         shell: bash
         env:
           AGENT_ID: ${{ inputs.agent_id }}
         run: |
-          ARGS=(--matrix)
-          if [ -n "$AGENT_ID" ]; then
-            ARGS+=(--agent-id "$AGENT_ID")
+          set +e
+          mkdir -p out
+          EXIT_CODE=0
+          FAILED_STEP=""
+
+          write_failure_report() {
+            local step_name="$1"
+            local exit_code="$2"
+            local stdout_path="$3"
+            local stderr_path="$4"
+            local report_path="out/discover-agents.failure.md"
+
+            {
+              echo "# discover-agents failed"
+              echo ""
+              echo "- Step: $step_name"
+              echo "- Exit code: $exit_code"
+              echo "- Trigger: ${{ github.event_name }}"
+              echo "- Commit: ${{ github.sha }}"
+              echo ""
+              echo "## stderr"
+              echo ""
+              echo '```text'
+              tail -n 200 "$stderr_path"
+              echo '```'
+              echo ""
+              echo "## stdout"
+              echo ""
+              echo '```text'
+              tail -n 100 "$stdout_path"
+              echo '```'
+            } > "$report_path"
+
+            local annotation
+            annotation="$(tail -n 1 "$stderr_path" | tr '\n' ' ' | sed 's/::/%3A%3A/g')"
+            if [ -z "$annotation" ]; then
+              annotation="Command failed in $step_name with exit code $exit_code"
+            fi
+            echo "::error title=discover-agents:$step_name::$annotation"
+          }
+
+          run_logged_step() {
+            local step_name="$1"
+            shift
+            local stdout_path="out/discover-agents.${step_name}.stdout.log"
+            local stderr_path="out/discover-agents.${step_name}.stderr.log"
+
+            "$@" >"$stdout_path" 2>"$stderr_path"
+            local command_exit=$?
+
+            if [ "$command_exit" -ne 0 ]; then
+              write_failure_report "$step_name" "$command_exit" "$stdout_path" "$stderr_path"
+            fi
+
+            return "$command_exit"
+          }
+
+          run_logged_step npm-ci npm ci
+          EXIT_CODE=$?
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            ARGS=(--matrix)
+            if [ -n "$AGENT_ID" ]; then
+              ARGS+=(--agent-id "$AGENT_ID")
+            fi
+
+            run_logged_step build-matrix npm run --silent agent:list -- "${ARGS[@]}"
+            EXIT_CODE=$?
           fi
 
-          set +e
-          npm run --silent agent:list -- "${ARGS[@]}" \
-            > out/discover-agents.stdout.log \
-            2> out/discover-agents.stderr.log
-          EXIT_CODE=$?
           printf 'exit_code=%s\n' "$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
           if [ "$EXIT_CODE" -eq 0 ]; then
-            MATRIX="$(cat out/discover-agents.stdout.log)"
+            MATRIX="$(cat out/discover-agents.build-matrix.stdout.log)"
             printf 'matrix=%s\n' "$MATRIX" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            printf 'matrix=%s\n' '{"include":[]}' >> "$GITHUB_OUTPUT"
           fi
 
-          {
-            echo "# discover-agents failed"
-            echo ""
-            echo "- Exit code: $EXIT_CODE"
-            echo "- Trigger: ${{ github.event_name }}"
-            echo ""
-            echo "## stderr"
-            echo ""
-            echo '```text'
-            tail -n 200 out/discover-agents.stderr.log
-            echo '```'
-            echo ""
-            echo "## stdout"
-            echo ""
-            echo '```text'
-            tail -n 100 out/discover-agents.stdout.log
-            echo '```'
-          } > out/discover-agents.failure.md
+          exit 0
 
       - name: Append discovery summary
         if: always()
@@ -121,7 +162,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Fail discovery job if agent listing broke
-        if: ${{ steps.build-matrix.outputs.exit_code != '0' }}
+        if: ${{ steps.discover-pipeline.outputs.exit_code != '0' }}
         run: exit 1
 
   run-agent:
@@ -141,53 +182,100 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
-
-      - run: PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers npx playwright install --with-deps chromium
-
-      - name: Restore Marketplace auth state
+      - id: run-agent-pipeline
+        name: Run agent pipeline with diagnostics
+        shell: bash
         env:
           MARKETPLACE_STORAGE_STATE_B64: ${{ secrets.MARKETPLACE_STORAGE_STATE_B64 }}
         run: |
-          mkdir -p auth
-          printf '%s' "$MARKETPLACE_STORAGE_STATE_B64" | base64 --decode > auth/facebook-marketplace.json
-
-      - run: mkdir -p out
-
-      - id: run-agent
-        name: Run agent with diagnostics
-        shell: bash
-        run: |
           set +e
-          npm run --silent run:agent -- --file "${{ matrix.file }}" \
-            > "out/${{ matrix.id }}.stdout.log" \
-            2> "out/${{ matrix.id }}.stderr.log"
+          mkdir -p out auth
+          EXIT_CODE=0
+
+          write_failure_report() {
+            local step_name="$1"
+            local exit_code="$2"
+            local stdout_path="$3"
+            local stderr_path="$4"
+            local report_path="out/${{ matrix.id }}.failure.md"
+
+            {
+              echo "# ${{ matrix.label }} failed"
+              echo ""
+              echo "- Agent: ${{ matrix.id }}"
+              echo "- Step: $step_name"
+              echo "- Exit code: $exit_code"
+              echo "- Commit: ${{ github.sha }}"
+              echo ""
+              echo "## stderr"
+              echo ""
+              echo '```text'
+              tail -n 200 "$stderr_path"
+              echo '```'
+              echo ""
+              echo "## stdout"
+              echo ""
+              echo '```text'
+              tail -n 100 "$stdout_path"
+              echo '```'
+            } > "$report_path"
+
+            local annotation
+            annotation="$(tail -n 1 "$stderr_path" | tr '\n' ' ' | sed 's/::/%3A%3A/g')"
+            if [ -z "$annotation" ]; then
+              annotation="Command failed in $step_name with exit code $exit_code"
+            fi
+            echo "::error title=${{ matrix.id }}:$step_name::$annotation"
+          }
+
+          run_logged_step() {
+            local step_name="$1"
+            shift
+            local stdout_path="out/${{ matrix.id }}.${step_name}.stdout.log"
+            local stderr_path="out/${{ matrix.id }}.${step_name}.stderr.log"
+
+            "$@" >"$stdout_path" 2>"$stderr_path"
+            local command_exit=$?
+
+            if [ "$command_exit" -ne 0 ]; then
+              write_failure_report "$step_name" "$command_exit" "$stdout_path" "$stderr_path"
+            fi
+
+            return "$command_exit"
+          }
+
+          run_logged_step npm-ci npm ci
           EXIT_CODE=$?
-          printf 'exit_code=%s\n' "$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
           if [ "$EXIT_CODE" -eq 0 ]; then
-            exit 0
+            run_logged_step playwright-install env PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers npx playwright install --with-deps chromium
+            EXIT_CODE=$?
           fi
 
-          {
-            echo "# ${{ matrix.label }} failed"
-            echo ""
-            echo "- Agent: ${{ matrix.id }}"
-            echo "- Exit code: $EXIT_CODE"
-            echo "- Commit: ${{ github.sha }}"
-            echo ""
-            echo "## stderr"
-            echo ""
-            echo '```text'
-            tail -n 200 "out/${{ matrix.id }}.stderr.log"
-            echo '```'
-            echo ""
-            echo "## stdout"
-            echo ""
-            echo '```text'
-            tail -n 100 "out/${{ matrix.id }}.stdout.log"
-            echo '```'
-          } > "out/${{ matrix.id }}.failure.md"
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            run_logged_step restore-auth bash -lc '
+              if [ -z "$MARKETPLACE_STORAGE_STATE_B64" ]; then
+                echo "MARKETPLACE_STORAGE_STATE_B64 secret is missing." >&2
+                exit 1
+              fi
+
+              printf "%s" "$MARKETPLACE_STORAGE_STATE_B64" | base64 --decode > auth/facebook-marketplace.json
+
+              if [ ! -s auth/facebook-marketplace.json ]; then
+                echo "Decoded auth/facebook-marketplace.json is empty." >&2
+                exit 1
+              fi
+            '
+            EXIT_CODE=$?
+          fi
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            run_logged_step run-agent npm run --silent run:agent -- --file "${{ matrix.file }}"
+            EXIT_CODE=$?
+          fi
+
+          printf 'exit_code=%s\n' "$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Append workflow summary
         if: always()
@@ -206,10 +294,10 @@ jobs:
             out/${{ matrix.id }}.json
             out/${{ matrix.id }}.md
             out/${{ matrix.id }}.failure.md
-            out/${{ matrix.id }}.stdout.log
-            out/${{ matrix.id }}.stderr.log
+            out/${{ matrix.id }}.*.stdout.log
+            out/${{ matrix.id }}.*.stderr.log
           if-no-files-found: warn
 
       - name: Fail job if agent execution broke
-        if: ${{ steps.run-agent.outputs.exit_code != '0' }}
+        if: ${{ steps.run-agent-pipeline.outputs.exit_code != '0' }}
         run: exit 1
