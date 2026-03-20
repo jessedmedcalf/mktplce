@@ -66,8 +66,8 @@ jobs:
         env:
           AGENT_ID: ${{ inputs.agent_id }}
         run: |
-          MATRIX="$(npm run agent:list -- --matrix ${AGENT_ID:+--agent-id "$AGENT_ID"})"
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          MATRIX="$(npm run --silent agent:list -- --matrix ${AGENT_ID:+--agent-id "$AGENT_ID"})"
+          printf 'matrix=%s\n' "$MATRIX" >> "$GITHUB_OUTPUT"
 
   run-agent:
     needs:
