@@ -8,15 +8,48 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 21 * * *"
+    - cron: "0 22 * * *"
+    - cron: "0 2 * * *"
+    - cron: "0 3 * * *"
 
 concurrency:
   group: marketplace-scout
   cancel-in-progress: false
 
 jobs:
-  discover-agents:
+  schedule-window:
     runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.window.outputs.should_run }}
+      local_time: ${{ steps.window.outputs.local_time }}
+    steps:
+      - id: window
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "local_time=manual" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LOCAL_TIME="$(TZ=Australia/Sydney date +%H:%M)"
+          echo "local_time=$LOCAL_TIME" >> "$GITHUB_OUTPUT"
+
+          case "$LOCAL_TIME" in
+            08:00|13:00)
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  discover-agents:
+    needs: schedule-window
+    runs-on: ubuntu-latest
+    if: ${{ needs.schedule-window.outputs.should_run == 'true' }}
     outputs:
       matrix: ${{ steps.build-matrix.outputs.matrix }}
     steps:
@@ -37,7 +70,9 @@ jobs:
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   run-agent:
-    needs: discover-agents
+    needs:
+      - schedule-window
+      - discover-agents
     runs-on: ubuntu-latest
     if: ${{ fromJson(needs.discover-agents.outputs.matrix).include[0] != null }}
     strategy:
@@ -53,7 +88,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install --with-deps chromium
+      - run: PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers npx playwright install --with-deps chromium
 
       - name: Restore Marketplace auth state
         env:
