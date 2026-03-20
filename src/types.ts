@@ -1,4 +1,5 @@
 export type Direction = "north" | "south" | "east" | "west";
+export type ListingClassification = "exceptional" | "good" | "watch" | "pass";
 
 export type ScoreAdjustment =
   | {
@@ -37,7 +38,13 @@ export interface GlobalConfig {
       latitude: number;
       longitude: number;
     };
-    baseRadiusKm: number;
+    radiusTiers: Array<{
+      id: string;
+      label: string;
+      radiusKm: number;
+      scoreAdjustmentPoints?: number;
+      minimumClassification?: ListingClassification;
+    }>;
     directionalExtensionsKm?: Partial<Record<Direction, number>>;
     maxListingAgeDays: number;
     scrollRounds: number;
@@ -82,6 +89,11 @@ export interface SearchZone {
   latitude: number;
   longitude: number;
   radiusKm: number;
+  tierId: string;
+  tierLabel: string;
+  priorityRank: number;
+  scoreAdjustmentPoints: number;
+  minimumClassification?: ListingClassification;
 }
 
 export interface CandidateCard {
@@ -104,11 +116,21 @@ export interface ListingRecord {
   price: number | null;
   description: string;
   bodyText: string;
+  searchContext: {
+    tierId: string;
+    tierLabel: string;
+    zoneId: string;
+    zoneLabel: string;
+    radiusKm: number;
+    scoreAdjustmentPoints: number;
+    minimumClassification?: ListingClassification;
+    discoveredInZones: string[];
+  };
 }
 
 export interface ListingScore {
   score: number;
-  classification: "exceptional" | "good" | "watch" | "pass";
+  classification: ListingClassification;
   reasons: string[];
   blocked: boolean;
 }

@@ -1,5 +1,6 @@
 import type {
   GlobalConfig,
+  ListingClassification,
   ListingRecord,
   ListingScore,
   ProductConfig,
@@ -110,6 +111,13 @@ function applyAdjustment(text: string, price: number | null, adjustment: ScoreAd
   }
 }
 
+const classificationRank: Record<ListingClassification, number> = {
+  pass: 0,
+  watch: 1,
+  good: 2,
+  exceptional: 3
+};
+
 function classifyScore(score: number, globalConfig: GlobalConfig): ListingScore["classification"] {
   if (score >= globalConfig.reporting.exceptionalScoreThreshold) {
     return "exceptional";
@@ -124,6 +132,13 @@ function classifyScore(score: number, globalConfig: GlobalConfig): ListingScore[
   }
 
   return "pass";
+}
+
+function meetsMinimumClassification(
+  classification: ListingClassification,
+  minimumClassification: ListingClassification
+): boolean {
+  return classificationRank[classification] >= classificationRank[minimumClassification];
 }
 
 export function evaluateListing(
@@ -172,11 +187,32 @@ export function evaluateListing(
     }
   }
 
+  if (listing.searchContext.scoreAdjustmentPoints !== 0) {
+    score += listing.searchContext.scoreAdjustmentPoints;
+    reasons.push(
+      `${listing.searchContext.tierLabel} search tier adjustment (${listing.searchContext.scoreAdjustmentPoints} points)`
+    );
+  }
+
   score = Math.max(0, Math.min(100, score));
+
+  let classification = blocked ? "pass" : classifyScore(score, globalConfig);
+  const minimumClassification = listing.searchContext.minimumClassification;
+
+  if (
+    !blocked &&
+    minimumClassification &&
+    !meetsMinimumClassification(classification, minimumClassification)
+  ) {
+    classification = "pass";
+    reasons.push(
+      `${listing.searchContext.tierLabel} search tier only keeps ${minimumClassification} deals`
+    );
+  }
 
   return {
     score,
-    classification: blocked ? "pass" : classifyScore(score, globalConfig),
+    classification,
     reasons,
     blocked
   };

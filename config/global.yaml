@@ -4,12 +4,18 @@ marketplace:
 
 search:
   origin:
-    label: Sydney CBD
-    latitude: -33.8688
-    longitude: 151.2093
-  baseRadiusKm: 25
-  directionalExtensionsKm:
-    west: 10
+    label: Alexandria NSW 2015
+    latitude: -33.9105
+    longitude: 151.1994
+  radiusTiers:
+    - id: local
+      label: Local ring
+      radiusKm: 8
+    - id: extended
+      label: Extended ring
+      radiusKm: 15
+      scoreAdjustmentPoints: -18
+      minimumClassification: exceptional
   maxListingAgeDays: 7
   scrollRounds: 5
   maxListingsToInspect: 14

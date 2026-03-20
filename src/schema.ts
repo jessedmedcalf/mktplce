@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const classificationSchema = z.enum(["exceptional", "good", "watch", "pass"]);
+
 const scoreAdjustmentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("keywordBonus"),
@@ -38,7 +40,17 @@ export const globalConfigSchema = z.object({
       latitude: z.number(),
       longitude: z.number()
     }),
-    baseRadiusKm: z.number().positive(),
+    radiusTiers: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          label: z.string().min(1),
+          radiusKm: z.number().positive(),
+          scoreAdjustmentPoints: z.number().optional(),
+          minimumClassification: classificationSchema.optional()
+        })
+      )
+      .min(1),
     directionalExtensionsKm: z
       .object({
         north: z.number().nonnegative().optional(),

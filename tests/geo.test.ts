@@ -11,11 +11,24 @@ const globalConfig: GlobalConfig = {
   },
   search: {
     origin: {
-      label: "Sydney CBD",
-      latitude: -33.8688,
-      longitude: 151.2093
+      label: "Alexandria NSW 2015",
+      latitude: -33.9105,
+      longitude: 151.1994
     },
-    baseRadiusKm: 25,
+    radiusTiers: [
+      {
+        id: "local",
+        label: "Local ring",
+        radiusKm: 8
+      },
+      {
+        id: "extended",
+        label: "Extended ring",
+        radiusKm: 15,
+        scoreAdjustmentPoints: -18,
+        minimumClassification: "exceptional"
+      }
+    ],
     directionalExtensionsKm: {
       west: 10,
       north: 4
@@ -37,17 +50,18 @@ const globalConfig: GlobalConfig = {
   }
 };
 
-test("builds one base zone plus one zone per directional extension", () => {
+test("builds one base zone plus one zone per directional extension for each radius tier", () => {
   const zones = buildSearchZones(globalConfig);
 
-  assert.equal(zones.length, 3);
+  assert.equal(zones.length, 6);
 
-  const base = zones.find((zone) => zone.id === "base");
-  const west = zones.find((zone) => zone.id === "west");
+  const localBase = zones.find((zone) => zone.id === "local:base");
+  const extendedWest = zones.find((zone) => zone.id === "extended:west");
 
-  assert.ok(base);
-  assert.ok(west);
-  assert.equal(base?.radiusKm, 25);
-  assert.equal(west?.radiusKm, 30);
-  assert.ok((west?.longitude ?? 999) < globalConfig.search.origin.longitude);
+  assert.ok(localBase);
+  assert.ok(extendedWest);
+  assert.equal(localBase?.radiusKm, 8);
+  assert.equal(extendedWest?.radiusKm, 20);
+  assert.equal(extendedWest?.tierId, "extended");
+  assert.ok((extendedWest?.longitude ?? 999) < globalConfig.search.origin.longitude);
 });

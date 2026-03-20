@@ -4,7 +4,7 @@ Cloud-run Facebook Marketplace scouting agents with shared macros, per-product d
 
 ## What This Gives You
 
-- Shared search macros for every product agent, including directional range extensions.
+- Shared search macros for every product agent, including strict outer-radius tiers.
 - One YAML file per product agent, so you can add or remove products without touching code.
 - Per-product deal scoring rules for prices, accessories, red flags, and bundle bonuses.
 - GitHub Actions execution, so your Mac does not need to stay on.
@@ -24,12 +24,18 @@ The global config is where you change values that should affect every agent. Exa
 
 ```yaml
 search:
-  baseRadiusKm: 25
-  directionalExtensionsKm:
-    west: 10
+  radiusTiers:
+    - id: local
+      label: Local ring
+      radiusKm: 8
+    - id: extended
+      label: Extended ring
+      radiusKm: 15
+      scoreAdjustmentPoints: -18
+      minimumClassification: exceptional
 ```
 
-That creates an extra Marketplace search sweep shifted west, so every product agent looks 10km further west without broadening the search equally in every direction.
+That means every agent searches your normal local ring first, then a wider ring with a score penalty, and only keeps outer-ring results if they still qualify as exceptional.
 
 ## Add Or Remove Products
 
@@ -56,7 +62,7 @@ npm run auth:save
 
 This opens Chromium. Log in to Facebook, open Marketplace, then press Enter in the terminal. The session is saved to `auth/facebook-marketplace.json`.
 
-3. Update [config/global.yaml](/Users/jessemedcalf/mktplce/config/global.yaml) with your home coordinates and Marketplace region slug.
+3. Update [config/global.yaml](/Users/jessemedcalf/mktplce/config/global.yaml) with your home coordinates and any shared search-tier rules.
 
 4. Run all enabled agents locally:
 

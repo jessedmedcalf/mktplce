@@ -39,6 +39,10 @@ criteria:
         - without controller
       points: -10
       reason: Replacement controller cost eats into the deal
+    - type: priceThresholdBonus
+      atOrBelow: 49
+      points: 8
+      reason: Under $50 leaves room to replace the controller
     - type: keywordBonus
       keywords:
         - games included
@@ -47,4 +51,4 @@ criteria:
       points: 6
       reason: Bundle sweetens the price
 
-notes: Under $60 with controller is exceptional. Under $50 without controllers can still be worth a look.
+notes: Under $60 with controller is exceptional. Under $50 without a controller is acceptable locally, but the extended ring only keeps exceptional deals.

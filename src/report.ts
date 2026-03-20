@@ -15,6 +15,7 @@ function renderListing(result: AgentRunResult["listings"][number]): string {
     "",
     `- Score: **${result.score.score}** (${result.score.classification})`,
     `- Price: **${money(result.listing.price)}**`,
+    `- Search tier: **${result.listing.searchContext.tierLabel}** (${result.listing.searchContext.radiusKm}km)`,
     `- Link: ${result.listing.url}`,
     "",
     reasons,

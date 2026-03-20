@@ -53,41 +53,51 @@ function destinationPoint(
 }
 
 export function buildSearchZones(globalConfig: GlobalConfig): SearchZone[] {
-  const baseRadiusKm = globalConfig.search.baseRadiusKm;
   const {
     latitude,
     longitude,
     label
   } = globalConfig.search.origin;
 
-  const zones: SearchZone[] = [
-    {
-      id: "base",
-      label,
-      latitude,
-      longitude,
-      radiusKm: baseRadiusKm
-    }
-  ];
-
+  const zones: SearchZone[] = [];
   const directionalExtensions = globalConfig.search.directionalExtensionsKm ?? {};
 
-  for (const direction of Object.keys(directionalExtensions) as Direction[]) {
-    const extensionKm = directionalExtensions[direction];
-
-    if (!extensionKm || extensionKm <= 0) {
-      continue;
-    }
-
-    const shifted = destinationPoint(latitude, longitude, bearingForDirection(direction), extensionKm / 2);
-
+  for (const [priorityRank, tier] of globalConfig.search.radiusTiers.entries()) {
     zones.push({
-      id: direction,
-      label: `${label} + ${direction}`,
-      latitude: shifted.latitude,
-      longitude: shifted.longitude,
-      radiusKm: baseRadiusKm + extensionKm / 2
+      id: `${tier.id}:base`,
+      label: `${label} (${tier.label})`,
+      latitude,
+      longitude,
+      radiusKm: tier.radiusKm,
+      tierId: tier.id,
+      tierLabel: tier.label,
+      priorityRank,
+      scoreAdjustmentPoints: tier.scoreAdjustmentPoints ?? 0,
+      minimumClassification: tier.minimumClassification
     });
+
+    for (const direction of Object.keys(directionalExtensions) as Direction[]) {
+      const extensionKm = directionalExtensions[direction];
+
+      if (!extensionKm || extensionKm <= 0) {
+        continue;
+      }
+
+      const shifted = destinationPoint(latitude, longitude, bearingForDirection(direction), extensionKm / 2);
+
+      zones.push({
+        id: `${tier.id}:${direction}`,
+        label: `${label} + ${direction} (${tier.label})`,
+        latitude: shifted.latitude,
+        longitude: shifted.longitude,
+        radiusKm: tier.radiusKm + extensionKm / 2,
+        tierId: tier.id,
+        tierLabel: tier.label,
+        priorityRank,
+        scoreAdjustmentPoints: tier.scoreAdjustmentPoints ?? 0,
+        minimumClassification: tier.minimumClassification
+      });
+    }
   }
 
   return zones;

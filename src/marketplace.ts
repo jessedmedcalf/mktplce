@@ -8,7 +8,8 @@ import type {
   GlobalConfig,
   ListingRecord,
   ListingSnapshot,
-  ProductConfig
+  ProductConfig,
+  SearchZone
 } from "./types.js";
 
 function delay(ms: number): Promise<void> {
@@ -68,7 +69,12 @@ function extractDescription(snapshot: ListingSnapshot): string {
   return body.slice(0, 1000).trim();
 }
 
-function parseListingRecord(snapshot: ListingSnapshot): ListingRecord {
+type TrackedCandidate = CandidateCard & {
+  searchZone: SearchZone;
+  discoveredInZones: string[];
+};
+
+function parseListingRecord(snapshot: ListingSnapshot, candidate: TrackedCandidate): ListingRecord {
   const titleCandidate =
     snapshot.meta["og:title"] ??
     snapshot.meta["twitter:title"] ??
@@ -89,11 +95,21 @@ function parseListingRecord(snapshot: ListingSnapshot): ListingRecord {
     title,
     price,
     description,
-    bodyText: snapshot.bodyText
+    bodyText: snapshot.bodyText,
+    searchContext: {
+      tierId: candidate.searchZone.tierId,
+      tierLabel: candidate.searchZone.tierLabel,
+      zoneId: candidate.searchZone.id,
+      zoneLabel: candidate.searchZone.label,
+      radiusKm: candidate.searchZone.radiusKm,
+      scoreAdjustmentPoints: candidate.searchZone.scoreAdjustmentPoints,
+      minimumClassification: candidate.searchZone.minimumClassification,
+      discoveredInZones: candidate.discoveredInZones
+    }
   };
 }
 
-function buildSearchUrl(globalConfig: GlobalConfig, productConfig: ProductConfig, zone: ReturnType<typeof buildSearchZones>[number]): string {
+function buildSearchUrl(globalConfig: GlobalConfig, productConfig: ProductConfig, zone: SearchZone): string {
   const url = new URL(`https://www.facebook.com/marketplace/${globalConfig.marketplace.regionSlug}/search`);
 
   url.searchParams.set("query", productConfig.search.query);
@@ -225,7 +241,7 @@ export async function fetchMarketplaceListings(
   const zones = buildSearchZones(globalConfig);
   const context = await createContext(globalConfig);
   const page = await context.newPage();
-  const listingMap = new Map<string, CandidateCard>();
+  const listingMap = new Map<string, TrackedCandidate>();
 
   try {
     for (const zone of zones) {
@@ -247,11 +263,30 @@ export async function fetchMarketplaceListings(
 
       for (const candidate of candidates) {
         const normalizedUrl = normalizeListingUrl(candidate.url);
-        if (!listingMap.has(normalizedUrl)) {
+        const existing = listingMap.get(normalizedUrl);
+
+        if (!existing) {
           listingMap.set(normalizedUrl, {
             url: normalizedUrl,
-            previewText: candidate.previewText
+            previewText: candidate.previewText,
+            searchZone: zone,
+            discoveredInZones: [zone.label]
           });
+          continue;
+        }
+
+        if (!existing.discoveredInZones.includes(zone.label)) {
+          existing.discoveredInZones.push(zone.label);
+        }
+
+        const shouldPreferCurrentZone =
+          zone.priorityRank < existing.searchZone.priorityRank ||
+          (zone.priorityRank === existing.searchZone.priorityRank &&
+            zone.radiusKm < existing.searchZone.radiusKm);
+
+        if (shouldPreferCurrentZone) {
+          existing.searchZone = zone;
+          existing.previewText = candidate.previewText || existing.previewText;
         }
       }
 
@@ -259,12 +294,20 @@ export async function fetchMarketplaceListings(
     }
 
     const detailPage = await context.newPage();
-    const selectedCandidates = Array.from(listingMap.values()).slice(0, globalConfig.search.maxListingsToInspect);
+    const selectedCandidates = Array.from(listingMap.values())
+      .sort((left, right) => {
+        if (left.searchZone.priorityRank !== right.searchZone.priorityRank) {
+          return left.searchZone.priorityRank - right.searchZone.priorityRank;
+        }
+
+        return left.searchZone.radiusKm - right.searchZone.radiusKm;
+      })
+      .slice(0, globalConfig.search.maxListingsToInspect);
     const listings: ListingRecord[] = [];
 
     for (const candidate of selectedCandidates) {
       const snapshot = await extractSnapshot(detailPage, candidate.url, candidate.previewText);
-      listings.push(parseListingRecord(snapshot));
+      listings.push(parseListingRecord(snapshot, candidate));
       await delay(globalConfig.search.delayMsBetweenListings);
     }
 

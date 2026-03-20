@@ -4,4 +4,5 @@ out
 playwright-report
 test-results
 auth
+.playwright-browsers
 .DS_Store

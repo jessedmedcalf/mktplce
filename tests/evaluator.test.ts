@@ -11,14 +11,24 @@ const globalConfig: GlobalConfig = {
   },
   search: {
     origin: {
-      label: "Sydney CBD",
-      latitude: -33.8688,
-      longitude: 151.2093
+      label: "Alexandria NSW 2015",
+      latitude: -33.9105,
+      longitude: 151.1994
     },
-    baseRadiusKm: 25,
-    directionalExtensionsKm: {
-      west: 10
-    },
+    radiusTiers: [
+      {
+        id: "local",
+        label: "Local ring",
+        radiusKm: 8
+      },
+      {
+        id: "extended",
+        label: "Extended ring",
+        radiusKm: 15,
+        scoreAdjustmentPoints: -18,
+        minimumClassification: "exceptional"
+      }
+    ],
     maxListingAgeDays: 7,
     scrollRounds: 3,
     maxListingsToInspect: 10,
@@ -74,10 +84,16 @@ const productConfig: ProductConfig = {
         keywords: ["no controller", "without controller"],
         points: -10,
         reason: "Replacement controller cost eats into the deal"
+      },
+      {
+        type: "priceThresholdBonus",
+        atOrBelow: 49,
+        points: 8,
+        reason: "Under $50 leaves room to replace the controller"
       }
     ]
   },
-  notes: "Under $60 with controller is exceptional. Under $50 without controllers can still be worth a look."
+  notes: "Under $60 with controller is exceptional. Under $50 without a controller is acceptable locally, but the extended ring only keeps exceptional deals."
 };
 
 test("scores a low-priced PS4 with controller as exceptional", () => {
@@ -87,7 +103,16 @@ test("scores a low-priced PS4 with controller as exceptional", () => {
     title: "PS4 slim with controller",
     price: 55,
     description: "Works perfectly and comes with one controller.",
-    bodyText: "Works perfectly and comes with one controller."
+    bodyText: "Works perfectly and comes with one controller.",
+    searchContext: {
+      tierId: "local",
+      tierLabel: "Local ring",
+      zoneId: "local:base",
+      zoneLabel: "Alexandria NSW 2015 (Local ring)",
+      radiusKm: 8,
+      scoreAdjustmentPoints: 0,
+      discoveredInZones: ["Alexandria NSW 2015 (Local ring)"]
+    }
   };
 
   const score = evaluateListing(listing, productConfig, globalConfig);
@@ -97,18 +122,54 @@ test("scores a low-priced PS4 with controller as exceptional", () => {
   assert.ok(score.score >= 85);
 });
 
-test("keeps a cheap PS4 without controller on the radar instead of marking it exceptional", () => {
+test("treats a cheap PS4 without controller as acceptable inside the local ring", () => {
   const listing: ListingRecord = {
     id: "2",
     url: "https://www.facebook.com/marketplace/item/2",
     title: "PS4 console only",
     price: 49,
     description: "PS4 works fine, no controller included.",
-    bodyText: "PS4 works fine, no controller included."
+    bodyText: "PS4 works fine, no controller included.",
+    searchContext: {
+      tierId: "local",
+      tierLabel: "Local ring",
+      zoneId: "local:base",
+      zoneLabel: "Alexandria NSW 2015 (Local ring)",
+      radiusKm: 8,
+      scoreAdjustmentPoints: 0,
+      discoveredInZones: ["Alexandria NSW 2015 (Local ring)"]
+    }
   };
 
   const score = evaluateListing(listing, productConfig, globalConfig);
 
-  assert.equal(score.classification, "watch");
+  assert.equal(score.classification, "good");
+  assert.ok(score.score >= 70);
   assert.ok(score.score < 85);
+});
+
+test("drops extended-ring PS4 listings unless they are still exceptional after the distance penalty", () => {
+  const listing: ListingRecord = {
+    id: "3",
+    url: "https://www.facebook.com/marketplace/item/3",
+    title: "PS4 console only",
+    price: 49,
+    description: "PS4 works fine, no controller included.",
+    bodyText: "PS4 works fine, no controller included.",
+    searchContext: {
+      tierId: "extended",
+      tierLabel: "Extended ring",
+      zoneId: "extended:base",
+      zoneLabel: "Alexandria NSW 2015 (Extended ring)",
+      radiusKm: 15,
+      scoreAdjustmentPoints: -18,
+      minimumClassification: "exceptional",
+      discoveredInZones: ["Alexandria NSW 2015 (Extended ring)"]
+    }
+  };
+
+  const score = evaluateListing(listing, productConfig, globalConfig);
+
+  assert.equal(score.classification, "pass");
+  assert.ok(score.reasons.some((reason) => reason.includes("only keeps exceptional deals")));
 });
